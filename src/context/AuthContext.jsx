@@ -19,13 +19,27 @@ export function AuthProvider({ children }) {
     }
   });
 
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem("vibelyUser", JSON.stringify(user));
-    }
-  }, [user]);
+  const [rememberUser, setRememberUser] = useState(true);
 
+  useEffect(() => {
+    if (user && rememberUser) {
+      localStorage.setItem("vibelyUser", JSON.stringify(user));
+    } else if (!rememberUser) {
+      localStorage.removeItem("vibelyUser");
+    }
+  }, [user, rememberUser]);
+
+  // LOGIN - Accept any non-empty email and password
   const login = (email, password, remember = true) => {
+    if (!email?.trim() || !password?.trim()) {
+      return {
+        success: false,
+        message: "Please enter email and password.",
+      };
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
     const registered = JSON.parse(
       localStorage.getItem("vibelyAccounts") || "[]"
     );
@@ -35,25 +49,41 @@ export function AuthProvider({ children }) {
       ...registered,
     ];
 
+    // Use an existing profile if the email is already registered.
     const found = accounts.find(
       (account) =>
-        account.email.toLowerCase() === email.toLowerCase() &&
-        account.password === password
+        account.email?.toLowerCase() === normalizedEmail
     );
 
-    if (!found) {
-      return {
-        success: false,
-        message: "Invalid email or password.",
+    let loggedInUser;
+
+    if (found) {
+      const { password: ignored, ...safeUser } = found;
+      loggedInUser = safeUser;
+    } else {
+      // Create a temporary demo profile for any new email.
+      const name = normalizedEmail.split("@")[0] || "Vibely User";
+
+      loggedInUser = {
+        id: Date.now(),
+        name,
+        username: name.replace(/[^a-z0-9]/gi, "").toLowerCase(),
+        email: normalizedEmail,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=7c3aed&color=fff`,
+        bio: "Welcome to my Vibely profile ✨",
+        followers: 0,
+        following: 0,
       };
     }
 
-    const { password: ignored, ...safeUser } = found;
-
-    setUser(safeUser);
+    setRememberUser(remember);
+    setUser(loggedInUser);
 
     if (remember) {
-      localStorage.setItem("vibelyUser", JSON.stringify(safeUser));
+      localStorage.setItem(
+        "vibelyUser",
+        JSON.stringify(loggedInUser)
+      );
     } else {
       localStorage.removeItem("vibelyUser");
     }
@@ -61,18 +91,21 @@ export function AuthProvider({ children }) {
     return { success: true };
   };
 
+  // SIGNUP
   const signup = (name, email, password) => {
     const accounts = JSON.parse(
       localStorage.getItem("vibelyAccounts") || "[]"
     );
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     const exists = accounts.some(
       (account) =>
-        account.email.toLowerCase() === email.toLowerCase()
+        account.email.toLowerCase() === normalizedEmail
     );
 
     if (
-      email.toLowerCase() === currentUser.email.toLowerCase() ||
+      normalizedEmail === currentUser.email.toLowerCase() ||
       exists
     ) {
       return {
@@ -84,10 +117,10 @@ export function AuthProvider({ children }) {
     const account = {
       id: Date.now(),
       name,
-      username: email.split("@")[0]
+      username: normalizedEmail.split("@")[0]
         .replace(/[^a-z0-9]/gi, "")
         .toLowerCase(),
-      email,
+      email: normalizedEmail,
       password,
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=7c3aed&color=fff`,
       bio: "Welcome to my Vibely profile ✨",
@@ -102,15 +135,20 @@ export function AuthProvider({ children }) {
 
     const { password: ignored, ...safeUser } = account;
 
+    setRememberUser(true);
     setUser(safeUser);
+
     return { success: true };
   };
 
+  // LOGOUT
   const logout = () => {
     localStorage.removeItem("vibelyUser");
+    setRememberUser(false);
     setUser(null);
   };
 
+  // UPDATE PROFILE
   const updateProfile = (updates) => {
     const updated = { ...user, ...updates };
 
@@ -131,10 +169,12 @@ export function AuthProvider({ children }) {
       JSON.stringify(nextAccounts)
     );
 
-    localStorage.setItem(
-      "vibelyUser",
-      JSON.stringify(updated)
-    );
+    if (rememberUser) {
+      localStorage.setItem(
+        "vibelyUser",
+        JSON.stringify(updated)
+      );
+    }
   };
 
   return (
